@@ -1,0 +1,278 @@
+# Les requêtes intéressantes sur notre data set
+
+
+#--- requête 1: l'âge moyen/max/min des tueurs en série lors de leurs arrestations​ ---
+PREFIX crime: <http://example.org/crime/>
+PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+PREFIX schema: <http://schema.org/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+SELECT 
+  (AVG(xsd:decimal(?age)) AS ?ageMoyenArrestation)
+  (MIN(xsd:decimal(?age)) AS ?ageMinimum)
+  (MAX(xsd:decimal(?age)) AS ?ageMaximum)
+  (COUNT(?person) AS ?nombreTotal)
+WHERE {
+  ?person foaf:age ?age .
+  FILTER (datatype(?age) = xsd:integer)
+}
+
+#--- requête 2: Le nombre de tueurs en série nés par décennies.​ ---
+
+PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+PREFIX schema: <http://schema.org/>
+PREFIX dbo: <http://dbpedia.org/ontology/>
+PREFIX crime: <http://example.org/crime/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+SELECT ?decade (COUNT(?person) AS ?numberOfKillers)
+WHERE {
+  ?person a dbo:Criminal ;
+          schema:birthDate ?birthDate .
+  
+  # Extraction de l'année et calcul de la décennie
+  BIND (YEAR(?birthDate) AS ?birthYear)
+  BIND (FLOOR(?birthYear / 10) * 10 AS ?decadeStart)
+  BIND (CONCAT(STR(?decadeStart), "s") AS ?decade)
+}
+GROUP BY ?decade ?decadeStart
+ORDER BY ?decadeStart
+
+#--- requête 3:  TOP 10 des condamnations les plus fréquentes​​ ---
+PREFIX crime: <http://example.org/crime/>
+PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+
+SELECT ?conviction (COUNT(?person) AS ?nombreTueurs)
+WHERE {
+  ?person crime:conviction ?conviction .
+}
+GROUP BY ?conviction
+ORDER BY DESC(?nombreTueurs)
+LIMIT 10
+
+# requêtes lien avec Groupe 2: Lauréats prix nobel
+
+#--- Requête 1: Comparaison du nombre de Criminels VS Nombre de Lauréats par décennie​---
+PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+PREFIX crime: <http://example.org/crime/>
+PREFIX schema1: <http://schema.org/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+SELECT 
+  ?decade
+  (SUM(?estCriminel) AS ?criminels)
+  (SUM(?estLaureat) AS ?laureats)
+WHERE {
+  {
+    # Décennies des criminels
+    SELECT DISTINCT 
+      (CONCAT(STR(FLOOR(YEAR(?date)/10)*10), "s") AS ?decade)
+      ?person
+      (1 AS ?estCriminel)
+      (0 AS ?estLaureat)
+    WHERE {
+      ?person a foaf:Person ;
+              crime:dateApprehended ?date .
+    }
+  }
+  UNION
+  {
+    # Décennies des lauréats
+    SELECT DISTINCT 
+      (CONCAT(STR(FLOOR(xsd:integer(?year)/10)*10), "s") AS ?decade)
+      ?person
+      (0 AS ?estCriminel)
+      (1 AS ?estLaureat)
+    WHERE {
+      ?award schema1:recipient ?person ;
+             schema1:awardDate ?year .
+    }
+  }
+}
+GROUP BY ?decade
+ORDER BY ?decade
+
+# requêtes lien avec Groupe 12: Les monnaies dans le monde 
+
+#--- Requête 1: Nombre de tueurs en série par pays et par devise.​---
+PREFIX schema: <http://schema.org/>
+PREFIX dbo: <http://dbpedia.org/ontology/>
+PREFIX ex: <http://example.org/currency/>
+PREFIX crime: <http://example.org/crime/>
+
+SELECT 
+  ?pays
+  ?devise
+  ?symbole
+  (COUNT(DISTINCT ?criminel) AS ?nombreCriminels)
+WHERE {
+  # Criminels avec lieu de naissance
+  ?criminel schema:birthPlace ?lieuNaissance .
+  
+  # Devises avec pays et symbole
+  ?devise dbo:usedInCountry ?pays ;
+          schema:currencySymbol ?symbole .
+  
+  # Extraire le nom du pays du DBpedia URI
+  BIND(REPLACE(REPLACE(STR(?pays), "http://dbpedia.org/resource/", ""), "_", " ") AS ?nomPaysSimple)
+  
+  # Vérifier si le lieu de naissance contient le nom du pays
+  FILTER(CONTAINS(LCASE(?lieuNaissance), LCASE(?nomPaysSimple)))
+}
+GROUP BY ?pays ?devise ?symbole
+ORDER BY DESC(?nombreCriminels)
+
+
+
+#--- Requête 2: Crimes économiques par devise et par pays​---
+PREFIX schema: <http://schema.org/>
+PREFIX dbo: <http://dbpedia.org/ontology/>
+PREFIX ex: <http://example.org/currency/>
+PREFIX crime: <http://example.org/crime/>
+
+SELECT 
+  ?pays
+  ?devise
+  ?symbole
+  (COUNT(DISTINCT ?criminel) AS ?nombreCriminelsEconomiques)
+WHERE {
+  # Criminels avec lieu de naissance et crimes économiques
+  ?criminel schema:birthPlace ?lieuNaissance ;
+            crime:conviction ?conviction .
+  
+  # Filtrer les crimes économiques
+  FILTER(
+    CONTAINS(LCASE(?conviction), "fraud") || 
+    CONTAINS(LCASE(?conviction), "theft") || 
+    CONTAINS(LCASE(?conviction), "corruption") ||
+    CONTAINS(LCASE(?conviction), "money") ||
+    CONTAINS(LCASE(?conviction), "economic")
+  )
+  
+  # Devises avec pays et symbole
+  ?devise dbo:usedInCountry ?pays ;
+          schema:currencySymbol ?symbole .
+  
+  # Extraire le nom du pays du DBpedia URI
+  BIND(REPLACE(REPLACE(STR(?pays), "http://dbpedia.org/resource/", ""), "_", " ") AS ?nomPaysSimple)
+  
+  # Vérifier si le lieu de naissance contient le nom du pays
+  FILTER(CONTAINS(LCASE(?lieuNaissance), LCASE(?nomPaysSimple)))
+}
+GROUP BY ?pays ?devise ?symbole
+ORDER BY DESC(?nombreCriminelsEconomiques)
+
+
+# Requêtes lien avec Groupe 8: Athlètes des JO 2024 
+
+#--- Requête 1: Sport le plus pratiqué au JO par les pays ayant le plus de tueurs de en série​---
+PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+PREFIX schema: <http://schema.org/>
+PREFIX dbo: <http://dbpedia.org/ontology/>
+PREFIX sport: <http://purl.org/sport/>
+
+SELECT ?countryName ?sport ?count
+WHERE {
+  # Sous-requête pour trouver le max par pays
+  {
+    SELECT ?countryName (MAX(?athleteCount) AS ?maxCount)
+    WHERE {
+      {
+        SELECT DISTINCT ?countryName
+        WHERE {
+          ?criminal a dbo:Criminal ;
+                    schema:birthPlace ?birthPlace .
+          
+          BIND(REPLACE(STR(?birthPlace), "^.*,\\s*([^,]+)$", "$1") AS ?countryName)
+        }
+      }
+      
+      ?athlete a sport:Athlete ;
+               dbo:country ?country ;
+               dbo:sport ?sportTemp .
+      
+      FILTER(CONTAINS(STR(?country), ?countryName))
+      
+      # Compter par pays et sport
+      {
+        SELECT ?countryName ?sportTemp (COUNT(?athlete) AS ?athleteCount)
+        WHERE {
+          {
+            SELECT DISTINCT ?countryName
+            WHERE {
+              ?criminal a dbo:Criminal ;
+                        schema:birthPlace ?birthPlace .
+              
+              BIND(REPLACE(STR(?birthPlace), "^.*,\\s*([^,]+)$", "$1") AS ?countryName)
+            }
+          }
+          
+          ?athlete a sport:Athlete ;
+                   dbo:country ?country ;
+                   dbo:sport ?sportTemp .
+          
+          FILTER(CONTAINS(STR(?country), ?countryName))
+        }
+        GROUP BY ?countryName ?sportTemp
+      }
+    }
+    GROUP BY ?countryName
+  }
+  
+  # Récupérer le sport avec le max
+  {
+    SELECT ?countryName ?sport (COUNT(?athlete) AS ?count)
+    WHERE {
+      {
+        SELECT DISTINCT ?countryName
+        WHERE {
+          ?criminal a dbo:Criminal ;
+                    schema:birthPlace ?birthPlace .
+          
+          BIND(REPLACE(STR(?birthPlace), "^.*,\\s*([^,]+)$", "$1") AS ?countryName)
+        }
+      }
+      
+      ?athlete a sport:Athlete ;
+               dbo:country ?country ;
+               dbo:sport ?sport .
+      
+      FILTER(CONTAINS(STR(?country), ?countryName))
+    }
+    GROUP BY ?countryName ?sport
+  }
+  
+  FILTER(?count = ?maxCount)
+}
+ORDER BY ?countryName
+
+
+
+#--- Requête 2 : Années où il y'a eu le plus d'Athlètes nés au même moment que des tueurs en série.---​
+PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+PREFIX schema: <http://schema.org/>
+PREFIX dbo: <http://dbpedia.org/ontology/>
+PREFIX sport: <http://purl.org/sport/>
+
+SELECT ?year 
+       (COUNT(DISTINCT ?criminal) AS ?criminalCount)
+       (COUNT(DISTINCT ?athlete) AS ?athleteCount)
+       (GROUP_CONCAT(DISTINCT ?criminalName; separator=", ") AS ?criminals)
+       (GROUP_CONCAT(DISTINCT ?athleteName; separator=", ") AS ?athletes)
+WHERE {
+  # Les criminels avec leur année de naissance
+  ?criminal a dbo:Criminal ;
+            foaf:name ?criminalName ;
+            schema:birthDate ?criminalBirthDate .
+  
+  BIND(YEAR(?criminalBirthDate) AS ?year)
+  
+  # Les athlètes nés la même année
+  ?athlete a sport:Athlete ;
+           foaf:name ?athleteName ;
+           dbo:birthDate ?athleteBirthDate .
+  
+  FILTER(YEAR(?athleteBirthDate) = ?year)
+}
+GROUP BY ?year
+ORDER BY DESC(?correspondances)
